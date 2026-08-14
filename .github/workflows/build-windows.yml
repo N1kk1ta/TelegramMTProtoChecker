@@ -1,10 +1,10 @@
-
 name: Build Windows EXE
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ main, master ]
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -49,7 +49,6 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($otpRoot)) { throw "INSTALL_DIR_FOR_OTP is not set." }
 
           Write-Host "OTP root: $otpRoot"
-          Get-ChildItem "$otpRoot" -Force | Select-Object Name,FullName
 
           $escript = Get-ChildItem "$otpRoot" -Filter "escript.exe" -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
           if ($null -eq $escript) { throw "escript.exe not found below $otpRoot" }
@@ -64,9 +63,7 @@ jobs:
 
           # setup-beam's Windows OTP installation may contain erl.ini files
           # with absolute paths from the GitHub runner (D:\a\...).
-          # If copied into the EXE those paths remain embedded and escript
-          # later tries to load OTP modules from the build machine.
-          # OTP is relocatable without erl.ini, so remove all copies.
+          # Remove them so the bundled runtime remains relocatable.
           Get-ChildItem "app/bundled/erlang" -Filter "erl.ini" -Recurse -File -ErrorAction SilentlyContinue |
             Remove-Item -Force
           Write-Host "Removed relocatable-runtime erl.ini files."
@@ -79,8 +76,6 @@ jobs:
           if (!(Test-Path $target)) { throw "Failed to place escript.exe into bundle." }
           Write-Host "Bundled escript: $target"
 
-          # Robocopy returns 1 when files were copied successfully.
-          # Force the PowerShell step to finish with success.
           exit 0
 
       - name: Install PyInstaller
@@ -95,12 +90,40 @@ jobs:
       - name: Verify EXE
         shell: pwsh
         run: |
-          if (!(Test-Path "app/dist/TelegramProxyChecker.exe")) { throw "EXE not found" }
-          Get-Item "app/dist/TelegramProxyChecker.exe" | Format-List Name,Length,FullName
+          $exe = Get-Item "app/dist/TelegramProxyChecker.exe" -ErrorAction Stop
+          Write-Host ("EXE: {0} ({1:N2} MB)" -f $exe.FullName, ($exe.Length / 1MB))
 
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v7
         with:
-          name: TelegramProxyChecker-Windows
+          name: TelegramProxyChecker-Windows-v5.10
           path: app/dist/TelegramProxyChecker.exe
           if-no-files-found: error
+
+      - name: Publish GitHub Release v5.10
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "v5.10"
+          $title = "Telegram Proxy Checker v5.10"
+          $exe = "app/dist/TelegramProxyChecker.exe"
+
+          # If v5.9 already exists, replace it with the freshly built EXE.
+          gh release delete $tag --yes --cleanup-tag 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "No existing release $tag to remove."
+          }
+
+          gh release create $tag $exe `
+            --repo "${{ github.repository }}" `
+            --title $title `
+            --notes "Windows EXE built automatically by GitHub Actions from commit ${{ github.sha }}." `
+            --target "${{ github.sha }}" `
+            --latest
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to create GitHub Release $tag"
+          }
+
+          Write-Host "Release $tag published successfully."
