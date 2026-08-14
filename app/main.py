@@ -64,7 +64,11 @@ class App(tk.Tk):
         heads={"status":"Статус","ping":"Ping","dc":"DC","server":"Сервер/IP","port":"Порт","proto":"Протокол","details":"Результаты MTProto","url":"TG-ссылка"}
         widths={"status":100,"ping":90,"dc":55,"server":220,"port":60,"proto":115,"details":390,"url":330}
         for c in cols:
-            self.tree.heading(c,text=heads[c],command=self.sort_ping if c=="ping" else None)
+            # ttk raises TclError when -command is explicitly passed as None.
+            if c == "ping":
+                self.tree.heading(c, text=heads[c], command=self.sort_ping)
+            else:
+                self.tree.heading(c, text=heads[c])
             self.tree.column(c,width=widths[c],anchor="center" if c in ("status","ping","dc","port") else "w")
         self.tree.pack(fill="both",expand=True,padx=10,pady=5)
         self.pb=ttk.Progressbar(self,mode="determinate");self.pb.pack(fill="x",padx=10)
