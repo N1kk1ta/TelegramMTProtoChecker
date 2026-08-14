@@ -1,3 +1,4 @@
+
 name: Build Windows EXE
 
 on:
@@ -36,72 +37,56 @@ jobs:
         run: |
           Set-Location mtproto_proxy
           rebar3 escriptize
-
           $mtp = Resolve-Path "_build/default/bin/mtp_ping"
-
           New-Item -ItemType Directory -Force -Path "../app/bundled" | Out-Null
-
           Copy-Item $mtp "../app/bundled/mtp_ping"
 
       - name: Copy Erlang runtime
         shell: pwsh
         run: |
           $otpRoot = $env:INSTALL_DIR_FOR_OTP
+          if ([string]::IsNullOrWhiteSpace($otpRoot)) { throw "INSTALL_DIR_FOR_OTP is not set." }
 
-          if ([string]::IsNullOrWhiteSpace($otpRoot)) {
-            throw "INSTALL_DIR_FOR_OTP is not set."
-          }
+          Write-Host "OTP root: $otpRoot"
+          Get-ChildItem "$otpRoot" -Force | Select-Object Name,FullName
 
-          $erl = Join-Path $otpRoot "bin\erl.exe"
+          $escript = Get-ChildItem "$otpRoot" -Filter "escript.exe" -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($null -eq $escript) { throw "escript.exe not found below $otpRoot" }
 
-          if (!(Test-Path $erl)) {
-            throw "erl.exe not found at $erl"
-          }
+          Write-Host "Found escript: $($escript.FullName)"
+          New-Item -ItemType Directory -Force -Path "app/bundled/erlang" | Out-Null
 
-          Write-Host "Using Erlang OTP from: $otpRoot"
-
-          New-Item -ItemType Directory -Force `
-            -Path "app/bundled/erlang" | Out-Null
-
-          robocopy "$otpRoot" "app/bundled/erlang" `
-            /E /NFL /NDL /NJH /NJS /NP
-
+          robocopy "$otpRoot" "app/bundled/erlang" /E /NFL /NDL /NJH /NJS /NP
           $rc = $LASTEXITCODE
+          Write-Host "robocopy exit code: $rc"
+          if ($rc -gt 7) { exit $rc }
 
-          if ($rc -gt 7) {
-            exit $rc
+          $target = "app/bundled/erlang/bin/escript.exe"
+          if (!(Test-Path $target)) {
+            New-Item -ItemType Directory -Force -Path "app/bundled/erlang/bin" | Out-Null
+            Copy-Item $escript.FullName $target -Force
           }
-
-          if (!(Test-Path "app/bundled/erlang/bin/escript.exe")) {
-            throw "escript.exe was not copied."
-          }
+          if (!(Test-Path $target)) { throw "Failed to place escript.exe into bundle." }
+          Write-Host "Bundled escript: $target"
 
       - name: Install PyInstaller
-        run: python -m pip install pyinstaller
+        run: python -m pip install -r requirements-build.txt
 
       - name: Build single EXE
         shell: pwsh
         run: |
           Set-Location app
-
-          pyinstaller `
-            --noconsole `
-            --onefile `
-            --name TelegramProxyChecker `
-            --add-data "bundled;bundled" `
-            main.py
+          pyinstaller --noconsole --onefile --name TelegramProxyChecker --add-data "bundled;bundled" main.py
 
       - name: Verify EXE
         shell: pwsh
         run: |
-          if (!(Test-Path "app/dist/TelegramProxyChecker.exe")) {
-            throw "EXE not found"
-          }
+          if (!(Test-Path "app/dist/TelegramProxyChecker.exe")) { throw "EXE not found" }
+          Get-Item "app/dist/TelegramProxyChecker.exe" | Format-List Name,Length,FullName
 
-          Get-Item "app/dist/TelegramProxyChecker.exe"
-
-      - name: Upload EXE
+      - name: Upload EXE artifact
         uses: actions/upload-artifact@v4
         with:
           name: TelegramProxyChecker-Windows
           path: app/dist/TelegramProxyChecker.exe
+          if-no-files-found: error
