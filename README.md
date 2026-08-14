@@ -1,8 +1,8 @@
-# Telegram Proxy Checker v5.7
+# Telegram Proxy Checker v5.8
 
 Windows GUI checker for Telegram MTProto proxy links.
 
-## Что исправлено в v5.7
+## Что исправлено в v5.8
 - свежий список после скачивания сразу появляется в таблице;
 - при массовой проверке больше нет всплывающих окон на каждый прокси;
 - `mtp_ping` запускается без создания консольного окна Windows;
@@ -12,6 +12,3 @@ Windows GUI checker for Telegram MTProto proxy links.
 - ошибка конкретного `mtp_ping` показывается в строке таблицы, а не теряется за общим сообщением;
 - ссылка для Telegram формируется заново из server/port/secret и открывается через зарегистрированный `tg://` handler;
 - GitHub Actions использует актуальные версии actions.
-
-## Сборка
-GitHub Actions → Build Windows EXE → Run workflow.
