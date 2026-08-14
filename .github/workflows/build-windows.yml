@@ -90,7 +90,7 @@ jobs:
           Get-Item "app/dist/TelegramProxyChecker.exe" | Format-List Name,Length,FullName
 
       - name: Upload EXE artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: TelegramProxyChecker-Windows
           path: app/dist/TelegramProxyChecker.exe
