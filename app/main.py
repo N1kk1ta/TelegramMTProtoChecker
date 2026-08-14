@@ -32,7 +32,7 @@ def ptype(secret):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Telegram Proxy Checker v5.7")
+        self.title("Telegram Proxy Checker v5.8")
         self.geometry("1250x720")
         self.minsize(1000,580)
         self.proxies=[]; self.results=[]; self.running=False
@@ -139,10 +139,23 @@ class App(tk.Tk):
         creationflags=0
         if os.name == "nt":
             creationflags=subprocess.CREATE_NO_WINDOW
+        env=os.environ.copy()
+        # The bundled Erlang runtime is relocatable.  On Windows, make sure
+        # escript/erl explicitly use the runtime shipped inside this EXE.
+        erlang_root=resource_path("bundled","erlang")
+        env["ERL_ROOTDIR"]=erlang_root
+        env["ROOTDIR"]=erlang_root
+        env["PATH"]=os.path.join(erlang_root,"bin")+os.pathsep+env.get("PATH","")
+        for name in os.listdir(erlang_root) if os.path.isdir(erlang_root) else []:
+            if name.startswith("erts-"):
+                erts_bin=os.path.join(erlang_root,name,"bin")
+                if os.path.isdir(erts_bin):
+                    env["PATH"]=erts_bin+os.pathsep+env["PATH"]
+                    break
         r=subprocess.run(cmd,capture_output=True,text=True,encoding="utf-8",errors="replace",
                          timeout=max(45,int(self.timeout.get()/1000)*30),
                          startupinfo=startupinfo,creationflags=creationflags,
-                         cwd=os.path.dirname(mtp))
+                         cwd=os.path.dirname(mtp),env=env)
         text=(r.stdout or "")+(r.stderr or "")
         return self.parse_output(text),text
 
