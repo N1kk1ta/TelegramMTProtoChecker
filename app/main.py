@@ -32,7 +32,7 @@ def ptype(secret):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Telegram Proxy Checker v5.8")
+        self.title("Telegram Proxy Checker v5.10")
         self.geometry("1250x720")
         self.minsize(1000,580)
         self.proxies=[]; self.results=[]; self.running=False
@@ -51,7 +51,7 @@ class App(tk.Tk):
         for t,c in buttons: ttk.Button(b,text=t,command=c).pack(side="left",padx=3)
         o=ttk.Frame(self,padding=(10,0,10,8));o.pack(fill="x")
         ttk.Label(o,text="Timeout (мс):").pack(side="left")
-        self.timeout=tk.IntVar(value=5000);ttk.Spinbox(o,from_=1000,to=30000,increment=500,textvariable=self.timeout,width=7).pack(side="left",padx=4)
+        self.timeout=tk.IntVar(value=250);ttk.Spinbox(o,from_=250,to=30000,increment=250,textvariable=self.timeout,width=7).pack(side="left",padx=4)
         ttk.Label(o,text="Повторы:").pack(side="left",padx=(15,0))
         self.repeat=tk.IntVar(value=1);ttk.Spinbox(o,from_=1,to=5,textvariable=self.repeat,width=5).pack(side="left",padx=4)
         ttk.Label(o,text="DC:").pack(side="left",padx=(15,0))
@@ -72,7 +72,7 @@ class App(tk.Tk):
             self.tree.column(c,width=widths[c],anchor="center" if c in ("status","ping","dc","port") else "w")
         self.tree.pack(fill="both",expand=True,padx=10,pady=5)
         self.pb=ttk.Progressbar(self,mode="determinate");self.pb.pack(fill="x",padx=10)
-        ttk.Label(self,text="Проверка выполняется через настоящий mtp_ping: MTProto req_pq/res_pq + Telegram ping. В v5 Erlang/OTP и mtp_ping упакованы внутрь одного EXE.",padding=10).pack(anchor="w")
+        ttk.Label(self,text="Проверка выполняется через настоящий mtp_ping: MTProto req_pq/res_pq + Telegram ping. В v5.9 Erlang/OTP и mtp_ping упакованы внутрь одного EXE.",padding=10).pack(anchor="w")
 
     def set_lines(self,lines):
         seen=set(); self.proxies=[]
@@ -197,7 +197,8 @@ class App(tk.Tk):
             self.results.append((p,r))
             self.after(0,self.add_row,p,r,n)
         self.running=False
-        self.after(0,lambda:self.status.set(f"Готово: {sum(r['ok'] for _,r in self.results)} рабочих из {len(self.results)}"))
+        self.after(0,self.sort_ping)
+        self.after(0,lambda:self.status.set(f"Готово: {sum(r['ok'] for _,r in self.results)} рабочих из {len(self.results)}. Отсортировано по Ping"))
 
     def add_row(self,p,r,n):
         self.pb["value"]=n
