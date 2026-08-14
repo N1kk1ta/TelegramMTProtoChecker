@@ -32,7 +32,7 @@ def ptype(secret):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Telegram Proxy Checker v5")
+        self.title("Telegram Proxy Checker v5.7")
         self.geometry("1250x720")
         self.minsize(1000,580)
         self.proxies=[]; self.results=[]; self.running=False
@@ -80,18 +80,31 @@ class App(tk.Tk):
             p=parse_proxy(line)
             if p:
                 k=(p["server"],p["port"],p["secret"])
-                if k not in seen: seen.add(k);self.proxies.append(p)
-        for i in self.tree.get_children():self.tree.delete(i)
+                if k not in seen:
+                    seen.add(k)
+                    self.proxies.append(p)
         self.results=[]
+        self.refresh_table()
+
+    def refresh_table(self):
+        for i in self.tree.get_children():
+            self.tree.delete(i)
+        for p in self.proxies:
+            self.tree.insert("", "end", values=(
+                "⚪ Не проверен", "—", "—", p["server"], p["port"],
+                ptype(p["secret"]), "Ожидает проверки", p["url"]))
 
     def download(self):
         def job():
             try:
                 req=urllib.request.Request(SOURCE_RAW,headers={"User-Agent":"TelegramProxyChecker/5"})
                 with urllib.request.urlopen(req,timeout=20) as r:data=r.read().decode("utf-8","replace")
-                self.after(0,lambda:self.set_lines(data.splitlines()))
-                self.after(0,lambda:self.status.set(f"Загружено: {len(self.proxies)} прокси"))
-            except Exception as e:self.after(0,lambda:messagebox.showerror("Ошибка загрузки",f"{e}\n\n{SOURCE_PAGE}"))
+                lines=data.splitlines()
+                self.after(0, lambda lines=lines: self.set_lines(lines))
+                count=sum(1 for line in lines if parse_proxy(line))
+                self.after(0, lambda count=count: self.status.set(f"Загружено: {count} прокси"))
+            except Exception as e:
+                self.after(0, lambda e=e: self.status.set(f"Ошибка загрузки: {e}"))
         threading.Thread(target=job,daemon=True).start()
 
     def load_file(self):
@@ -110,25 +123,48 @@ class App(tk.Tk):
 
     def check_one(self,p):
         escript,mtp=self.mtp_command()
-        cmd=[escript,mtp,"--dc",self.dc.get(),"--timeout",str(self.timeout.get()),"--repeat",str(self.repeat.get()),p["url"]]
+        secret=p["secret"].lower()
+        if secret.startswith("dd"):
+            proto="secure"
+        elif secret.startswith("ee"):
+            proto="fake-tls"
+        elif len(secret) > 32:
+            # Base64-url Fake-TLS secrets do not necessarily start with ee.
+            proto="fake-tls"
+        else:
+            proto="normal"
+        cmd=[escript,mtp,"--proto",proto,"--dc",self.dc.get(),
+             "--timeout",str(self.timeout.get()),"--repeat",str(self.repeat.get()),p["url"]]
+        startupinfo=None
+        creationflags=0
+        if os.name == "nt":
+            creationflags=subprocess.CREATE_NO_WINDOW
         r=subprocess.run(cmd,capture_output=True,text=True,encoding="utf-8",errors="replace",
-                         timeout=max(45,int(self.timeout.get()/1000)*30))
+                         timeout=max(45,int(self.timeout.get()/1000)*30),
+                         startupinfo=startupinfo,creationflags=creationflags,
+                         cwd=os.path.dirname(mtp))
         text=(r.stdout or "")+(r.stderr or "")
         return self.parse_output(text),text
 
     def parse_output(self,text):
-        # Current mtp_ping format contains:
-        # protocol DC +N : tcp=Xms handshake=Yms ping=Zms [total=Tms] OK
+        # mtp_ping output:
+        #   fake-tls   DC +1  : tcp=45ms handshake=52ms ping=140ms  [total=237ms]  OK
         rows=[]
-        pat=re.compile(r'(?:DC\s+)?([+-]\d+)\s*:.*?ping=(\d+)ms.*?(?:total=(\d+)ms)?.*?\b(OK|DISABLED)\b',re.I)
+        pat=re.compile(r'DC\s+([+-]?\d+)\s*:\s*.*?ping=(\d+)ms.*?(?:\[?total=(\d+)ms\]?.*?)?\b(OK|DISABLED)\b',re.I)
         for m in pat.finditer(text):
             rows.append((int(m.group(2)),int(m.group(1)),m.group(4).upper()=="OK",m.group(3)))
         if not rows:
-            # More tolerant fallback
-            pat=re.compile(r'DC\s+([+-]?\d+).*?ping[=:]\s*(\d+)\s*ms',re.I)
-            for m in pat.finditer(text):rows.append((int(m.group(2)),int(m.group(1)),True,None))
+            # Accept variants without total and with extra whitespace/newlines.
+            pat=re.compile(r'DC\s+([+-]?\d+).*?ping\s*[=:]\s*(\d+)\s*ms.*?\b(OK|DISABLED)\b',re.I|re.S)
+            for m in pat.finditer(text):
+                rows.append((int(m.group(2)),int(m.group(1)),m.group(3).upper()=="OK",None))
         good=[x for x in rows if x[2]]
-        if not good:return {"ok":False,"ping":None,"dc":None,"details":"MTProto handshake/ping failed"}
+        if not good:
+            # Keep the real tool error in the row instead of hiding it behind a generic popup.
+            compact=" ".join(text.strip().split())
+            if len(compact)>220: compact=compact[:220]+"…"
+            return {"ok":False,"ping":None,"dc":None,
+                    "details":compact or "MTProto handshake/ping failed"}
         good.sort(key=lambda x:x[0])
         details=" | ".join(f"DC{dc}: {ping} ms"+(f" (total {tot} ms)" if tot else "") for ping,dc,_,tot in good)
         return {"ok":True,"ping":good[0][0],"dc":good[0][1],"details":details}
@@ -170,12 +206,25 @@ class App(tk.Tk):
     def open_tg(self):
         s=self.tree.selection()
         if not s:return
-        uri=self.tree.item(s[0],"values")[7]
-        if not uri.startswith("tg://proxy?"):uri="tg://proxy?"+urllib.parse.urlparse(uri).query
+        values=self.tree.item(s[0],"values")
+        server,port,secret=values[3],values[4],values[7]
+        # Always rebuild a canonical tg:// URI from parsed proxy data.
+        p=parse_proxy(secret)
+        if not p:
+            self.status.set("Не удалось сформировать корректную Telegram-ссылку")
+            return
+        uri="tg://proxy?"+urllib.parse.urlencode(
+            {"server":p["server"],"port":p["port"],"secret":p["secret"]},
+            safe="-_.~="
+        )
         try:
-            if os.name=="nt":subprocess.Popen(["cmd","/c","start","",uri],shell=False)
-            else:webbrowser.open(uri)
-        except Exception as e:messagebox.showerror("Telegram",str(e))
+            if os.name=="nt":
+                os.startfile(uri)
+            else:
+                webbrowser.open(uri)
+            self.status.set("Ссылка передана в Telegram")
+        except Exception as e:
+            self.status.set(f"Ошибка открытия Telegram: {e}")
 
     def export(self):
         good=[p["url"] for p,r in self.results if r["ok"]]
