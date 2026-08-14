@@ -62,6 +62,15 @@ jobs:
           Write-Host "robocopy exit code: $rc"
           if ($rc -gt 7) { exit $rc }
 
+          # setup-beam's Windows OTP installation may contain erl.ini files
+          # with absolute paths from the GitHub runner (D:\a\...).
+          # If copied into the EXE those paths remain embedded and escript
+          # later tries to load OTP modules from the build machine.
+          # OTP is relocatable without erl.ini, so remove all copies.
+          Get-ChildItem "app/bundled/erlang" -Filter "erl.ini" -Recurse -File -ErrorAction SilentlyContinue |
+            Remove-Item -Force
+          Write-Host "Removed relocatable-runtime erl.ini files."
+
           $target = "app/bundled/erlang/bin/escript.exe"
           if (!(Test-Path $target)) {
             New-Item -ItemType Directory -Force -Path "app/bundled/erlang/bin" | Out-Null
