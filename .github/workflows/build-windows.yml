@@ -96,17 +96,17 @@ jobs:
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v7
         with:
-          name: TelegramProxyChecker-Windows-v5.11
+          name: TelegramProxyChecker-Windows-v5.12
           path: app/dist/TelegramProxyChecker.exe
           if-no-files-found: error
 
-      - name: Publish GitHub Release v5.11
+      - name: Publish GitHub Release v5.12
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v5.11"
-          $title = "Telegram Proxy Checker v5.11"
+          $tag = "v5.12"
+          $title = "Telegram Proxy Checker v5.12"
           $exe = "app/dist/TelegramProxyChecker.exe"
 
           # If v5.9 already exists, replace it with the freshly built EXE.
