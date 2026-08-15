@@ -32,7 +32,7 @@ def ptype(secret):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Telegram Proxy Checker v5.10")
+        self.title("Telegram Proxy Checker v5.11")
         self.geometry("1250x720")
         self.minsize(1000,580)
         self.proxies=[]; self.results=[]; self.running=False
@@ -71,8 +71,55 @@ class App(tk.Tk):
                 self.tree.heading(c, text=heads[c])
             self.tree.column(c,width=widths[c],anchor="center" if c in ("status","ping","dc","port") else "w")
         self.tree.pack(fill="both",expand=True,padx=10,pady=5)
+        # TG-ссылка: ЛКМ открывает ссылку в Telegram, ПКМ копирует её в буфер обмена.
+        self.tree.bind("<Button-1>", self.on_tree_left_click, add="+")
+        self.tree.bind("<Button-3>", self.on_tree_right_click, add="+")
         self.pb=ttk.Progressbar(self,mode="determinate");self.pb.pack(fill="x",padx=10)
         ttk.Label(self,text="Проверка выполняется через настоящий mtp_ping: MTProto req_pq/res_pq + Telegram ping. В v5.9 Erlang/OTP и mtp_ping упакованы внутрь одного EXE.",padding=10).pack(anchor="w")
+
+    def get_item_tg_url(self, item_id):
+        if not item_id:
+            return None
+        values=self.tree.item(item_id, "values")
+        if not values or len(values) < 8:
+            return None
+        url=values[7]
+        return str(url) if url else None
+
+    def on_tree_left_click(self, event):
+        # Открываем TG-ссылку только при клике по последней колонке.
+        if self.tree.identify_region(event.x, event.y) != "cell":
+            return
+        if self.tree.identify_column(event.x) != "#8":
+            return
+        item=self.tree.identify_row(event.y)
+        if not item:
+            return
+        self.tree.selection_set(item)
+        self.tree.focus(item)
+        url=self.get_item_tg_url(item)
+        if url:
+            self.open_tg_url(url)
+        return "break"
+
+    def on_tree_right_click(self, event):
+        # ПКМ по TG-ссылке копирует полный URI, а не только видимый текст.
+        if self.tree.identify_region(event.x, event.y) != "cell":
+            return
+        if self.tree.identify_column(event.x) != "#8":
+            return
+        item=self.tree.identify_row(event.y)
+        if not item:
+            return
+        self.tree.selection_set(item)
+        self.tree.focus(item)
+        url=self.get_item_tg_url(item)
+        if url:
+            self.clipboard_clear()
+            self.clipboard_append(url)
+            self.update()
+            self.status.set("TG-ссылка скопирована в буфер обмена")
+        return "break"
 
     def set_lines(self,lines):
         seen=set(); self.proxies=[]
@@ -133,7 +180,11 @@ class App(tk.Tk):
             proto="fake-tls"
         else:
             proto="normal"
-        cmd=[escript,mtp,"--proto",proto,"--dc",self.dc.get(),
+        dc_value=self.dc.get().strip()
+        # Values beginning with '-' must stay attached to --dc; otherwise the
+        # escript option parser can interpret the first negative DC as another option.
+        dc_arg=("--dc=" + dc_value) if dc_value else "--dc"
+        cmd=[escript,mtp,"--proto",proto,dc_arg,
              "--timeout",str(self.timeout.get()),"--repeat",str(self.repeat.get()),p["url"]]
         startupinfo=None
         creationflags=0
@@ -217,13 +268,9 @@ class App(tk.Tk):
             rows.append((n,i))
         for pos,(_,i) in enumerate(sorted(rows,key=lambda x:x[0])):self.tree.move(i,"",pos)
 
-    def open_tg(self):
-        s=self.tree.selection()
-        if not s:return
-        values=self.tree.item(s[0],"values")
-        server,port,secret=values[3],values[4],values[7]
+    def open_tg_url(self, url):
         # Always rebuild a canonical tg:// URI from parsed proxy data.
-        p=parse_proxy(secret)
+        p=parse_proxy(url)
         if not p:
             self.status.set("Не удалось сформировать корректную Telegram-ссылку")
             return
@@ -239,6 +286,13 @@ class App(tk.Tk):
             self.status.set("Ссылка передана в Telegram")
         except Exception as e:
             self.status.set(f"Ошибка открытия Telegram: {e}")
+
+    def open_tg(self):
+        s=self.tree.selection()
+        if not s:return
+        url=self.get_item_tg_url(s[0])
+        if url:
+            self.open_tg_url(url)
 
     def export(self):
         good=[p["url"] for p,r in self.results if r["ok"]]
