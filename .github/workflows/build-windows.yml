@@ -96,20 +96,20 @@ jobs:
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v7
         with:
-          name: TelegramProxyChecker-Windows-v5.17
+          name: TelegramProxyChecker-Windows-v5.18
           path: app/dist/TelegramProxyChecker.exe
           if-no-files-found: error
 
-      - name: Publish GitHub Release v5.17
+      - name: Publish GitHub Release v5.18
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v5.17"
-          $title = "Telegram Proxy Checker v5.17"
+          $tag = "v5.18"
+          $title = "Telegram Proxy Checker v5.18"
           $exe = "app/dist/TelegramProxyChecker.exe"
 
-          # If v5.17 already exists, replace it with the freshly built EXE.
+          # If v5.18 already exists, replace it with the freshly built EXE.
           gh release delete $tag --yes --cleanup-tag 2>$null
           if ($LASTEXITCODE -ne 0) {
             Write-Host "No existing release $tag to remove."
