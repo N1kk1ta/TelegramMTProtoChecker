@@ -31,6 +31,10 @@ jobs:
           repository: seriyps/mtproto_proxy
           path: mtproto_proxy
 
+      - name: Patch mtp_ping secret parser
+        shell: pwsh
+        run: python patch_mtp_ping.py
+
       - name: Build mtp_ping
         shell: pwsh
         run: |
@@ -96,20 +100,20 @@ jobs:
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v7
         with:
-          name: TelegramProxyChecker-Windows-v5.18
+          name: TelegramProxyChecker-Windows-v5.19
           path: app/dist/TelegramProxyChecker.exe
           if-no-files-found: error
 
-      - name: Publish GitHub Release v5.18
+      - name: Publish GitHub Release v5.19
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v5.18"
-          $title = "Telegram Proxy Checker v5.18"
+          $tag = "v5.19"
+          $title = "Telegram Proxy Checker v5.19"
           $exe = "app/dist/TelegramProxyChecker.exe"
 
-          # If v5.18 already exists, replace it with the freshly built EXE.
+          # If v5.19 already exists, replace it with the freshly built EXE.
           gh release delete $tag --yes --cleanup-tag 2>$null
           if ($LASTEXITCODE -ne 0) {
             Write-Host "No existing release $tag to remove."
