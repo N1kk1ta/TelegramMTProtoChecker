@@ -2,6 +2,7 @@
 import os, sys, subprocess, tempfile, shutil, urllib.request, urllib.parse, re, threading, webbrowser
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
+from tkinter import font as tkfont
 
 SOURCE_RAW="https://raw.githubusercontent.com/Grim1313/mtproto-for-telegram/master/all_proxies.txt"
 SOURCE_PAGE="https://github.com/Grim1313/mtproto-for-telegram/blob/master/all_proxies.txt"
@@ -32,7 +33,7 @@ def ptype(secret):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Telegram Proxy Checker v5.12")
+        self.title("Telegram Proxy Checker v5.13")
         self.geometry("1250x720")
         self.minsize(1000,580)
         self.proxies=[]; self.results=[]; self.running=False
@@ -51,7 +52,7 @@ class App(tk.Tk):
         for t,c in buttons: ttk.Button(b,text=t,command=c).pack(side="left",padx=3)
         o=ttk.Frame(self,padding=(10,0,10,8));o.pack(fill="x")
         ttk.Label(o,text="Timeout (мс):").pack(side="left")
-        self.timeout=tk.IntVar(value=250);ttk.Spinbox(o,from_=250,to=30000,increment=250,textvariable=self.timeout,width=7).pack(side="left",padx=4)
+        self.timeout=tk.IntVar(value=150);ttk.Spinbox(o,from_=50,to=30000,increment=50,textvariable=self.timeout,width=7).pack(side="left",padx=4)
         ttk.Label(o,text="Повторы:").pack(side="left",padx=(15,0))
         self.repeat=tk.IntVar(value=1);ttk.Spinbox(o,from_=1,to=5,textvariable=self.repeat,width=5).pack(side="left",padx=4)
         ttk.Label(o,text="DC:").pack(side="left",padx=(15,0))
@@ -84,8 +85,9 @@ class App(tk.Tk):
         # TG-ссылка: ЛКМ открывает ссылку в Telegram, ПКМ копирует её в буфер обмена.
         self.tree.bind("<Button-1>", self.on_tree_left_click, add="+")
         self.tree.bind("<Button-3>", self.on_tree_right_click, add="+")
+        self.tree.bind("<Double-Button-1>", self.on_tree_header_double_click, add="+")
         self.pb=ttk.Progressbar(self,mode="determinate");self.pb.pack(fill="x",padx=10)
-        ttk.Label(self,text="Проверка выполняется через настоящий mtp_ping: MTProto req_pq/res_pq + Telegram ping. В v5.9 Erlang/OTP и mtp_ping упакованы внутрь одного EXE.",padding=10).pack(anchor="w")
+        ttk.Label(self,text="Проверка выполняется через настоящий mtp_ping: MTProto req_pq/res_pq + Telegram ping. В v5.13 Erlang/OTP и mtp_ping упакованы внутрь одного EXE.",padding=10).pack(anchor="w")
 
     def get_item_tg_url(self, item_id):
         if not item_id:
@@ -97,19 +99,57 @@ class App(tk.Tk):
         return str(url) if url else None
 
     def on_tree_left_click(self, event):
-        # Открываем TG-ссылку только при клике по последней колонке.
+        # ЛКМ по результату MTProto копирует весь текст ячейки.
+        # ЛКМ по TG-ссылке открывает ссылку в Telegram.
         if self.tree.identify_region(event.x, event.y) != "cell":
             return
-        if self.tree.identify_column(event.x) != "#8":
+        col=self.tree.identify_column(event.x)
+        if col not in ("#7", "#8"):
             return
         item=self.tree.identify_row(event.y)
         if not item:
             return
         self.tree.selection_set(item)
         self.tree.focus(item)
-        url=self.get_item_tg_url(item)
-        if url:
-            self.open_tg_url(url)
+        values=self.tree.item(item, "values")
+        if col == "#7" and len(values) >= 7:
+            text=str(values[6])
+            if text:
+                self.clipboard_clear()
+                self.clipboard_append(text)
+                self.update()
+                self.status.set("Результат MTProto скопирован в буфер обмена")
+        elif col == "#8":
+            url=self.get_item_tg_url(item)
+            if url:
+                self.open_tg_url(url)
+        return "break"
+
+    def on_tree_header_double_click(self, event):
+        # Двойной ЛКМ по заголовку/разделителю между колонками
+        # автоматически подбирает ширину соответствующей колонки.
+        if self.tree.identify_region(event.x, event.y) != "heading":
+            return
+        col=self.tree.identify_column(event.x)
+        if not col or col == "#0":
+            return
+        try:
+            idx=int(col[1:])-1
+            column=self.tree["columns"][idx]
+        except (ValueError, IndexError):
+            return
+        f=tkfont.nametofont("TkDefaultFont")
+        heading=self.tree.heading(column, "text") or ""
+        max_width=f.measure(str(heading)) + 24
+        for item in self.tree.get_children(""):
+            vals=self.tree.item(item, "values")
+            if idx < len(vals):
+                max_width=max(max_width, f.measure(str(vals[idx])) + 24)
+        # Ограничиваем экстремально длинные строки, чтобы одна ошибка
+        # не превращала таблицу в полосу на несколько тысяч пикселей.
+        max_limits={"details":1200,"url":700,"server":500}
+        max_width=min(max_width, max_limits.get(column, 500))
+        self.tree.column(column, width=max(60, max_width))
         return "break"
 
     def on_tree_right_click(self, event):
@@ -239,9 +279,17 @@ class App(tk.Tk):
                 rows.append((int(m.group(2)),int(m.group(1)),m.group(3).upper()=="OK",None))
         good=[x for x in rows if x[2]]
         if not good:
-            # Keep the real tool error in the row instead of hiding it behind a generic popup.
+            # Не показываем пользователю многострочную справку mtp_ping.
+            # Извлекаем реальную причину (например, invalid secret length).
             compact=" ".join(text.strip().split())
-            if len(compact)>220: compact=compact[:220]+"…"
+            err_match=re.search(r'Error:\s*(.+?)(?:\s+Usage:|$)', compact, re.I)
+            if err_match:
+                compact=err_match.group(1).strip()
+            elif "Usage: mtp_ping" in compact:
+                # Если текущий mtp_ping не дал отдельного Error:, считаем URL
+                # некорректным, а не выдаём пользователю страницу Usage.
+                compact="Некорректная MTProto-ссылка или secret"
+            if len(compact)>300: compact=compact[:300]+"…"
             return {"ok":False,"ping":None,"dc":None,
                     "details":compact or "MTProto handshake/ping failed"}
         good.sort(key=lambda x:x[0])
