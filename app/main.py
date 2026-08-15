@@ -32,7 +32,7 @@ def ptype(secret):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Telegram Proxy Checker v5.11")
+        self.title("Telegram Proxy Checker v5.12")
         self.geometry("1250x720")
         self.minsize(1000,580)
         self.proxies=[]; self.results=[]; self.running=False
@@ -60,7 +60,10 @@ class App(tk.Tk):
         self.status=tk.StringVar(value="Готово");ttk.Label(o,textvariable=self.status).pack(side="right")
 
         cols=("status","ping","dc","server","port","proto","details","url")
-        self.tree=ttk.Treeview(self,columns=cols,show="headings",selectmode="extended")
+        # Таблица с вертикальной и горизонтальной прокруткой.
+        table_frame=ttk.Frame(self)
+        table_frame.pack(fill="both",expand=True,padx=10,pady=5)
+        self.tree=ttk.Treeview(table_frame,columns=cols,show="headings",selectmode="extended")
         heads={"status":"Статус","ping":"Ping","dc":"DC","server":"Сервер/IP","port":"Порт","proto":"Протокол","details":"Результаты MTProto","url":"TG-ссылка"}
         widths={"status":100,"ping":90,"dc":55,"server":220,"port":60,"proto":115,"details":390,"url":330}
         for c in cols:
@@ -70,7 +73,14 @@ class App(tk.Tk):
             else:
                 self.tree.heading(c, text=heads[c])
             self.tree.column(c,width=widths[c],anchor="center" if c in ("status","ping","dc","port") else "w")
-        self.tree.pack(fill="both",expand=True,padx=10,pady=5)
+        vscroll=ttk.Scrollbar(table_frame,orient="vertical",command=self.tree.yview)
+        hscroll=ttk.Scrollbar(table_frame,orient="horizontal",command=self.tree.xview)
+        self.tree.configure(yscrollcommand=vscroll.set,xscrollcommand=hscroll.set)
+        self.tree.grid(row=0,column=0,sticky="nsew")
+        vscroll.grid(row=0,column=1,sticky="ns")
+        hscroll.grid(row=1,column=0,sticky="ew")
+        table_frame.rowconfigure(0,weight=1)
+        table_frame.columnconfigure(0,weight=1)
         # TG-ссылка: ЛКМ открывает ссылку в Telegram, ПКМ копирует её в буфер обмена.
         self.tree.bind("<Button-1>", self.on_tree_left_click, add="+")
         self.tree.bind("<Button-3>", self.on_tree_right_click, add="+")
@@ -181,11 +191,16 @@ class App(tk.Tk):
         else:
             proto="normal"
         dc_value=self.dc.get().strip()
-        # Values beginning with '-' must stay attached to --dc; otherwise the
-        # escript option parser can interpret the first negative DC as another option.
-        dc_arg=("--dc=" + dc_value) if dc_value else "--dc"
-        cmd=[escript,mtp,"--proto",proto,dc_arg,
-             "--timeout",str(self.timeout.get()),"--repeat",str(self.repeat.get()),p["url"]]
+        # mtp_ping uses a simple positional Erlang argument parser: --dc must
+        # be a separate argument followed by its value. Do NOT use --dc=...
+        # because it is treated as an unknown option (especially for negative DCs).
+        cmd=[escript,mtp]
+        if dc_value:
+            cmd += ["--dc",dc_value]
+        # mtp_ping can determine normal/secure/fake-TLS directly from the URL
+        # secret, so there is no need to force --proto and risk overriding the
+        # protocol encoded in the link.
+        cmd += ["--timeout",str(self.timeout.get()),"--repeat",str(self.repeat.get()),p["url"]]
         startupinfo=None
         creationflags=0
         if os.name == "nt":
